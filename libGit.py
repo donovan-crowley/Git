@@ -4,8 +4,8 @@ from fnmatch import fnmatch
 from math import ceil
 
 argparser = argparse.ArgumentParser(description = "Command-line parser")
-argsubparser = argparser.add_argument(title = "Command", dest = "command")
-argsubparser.required = True
+argsubparsers = argparser.add_subparsers(title = "Command", dest = "command")
+argsubparsers.required = True
 
 
 def cmd_add(args):
