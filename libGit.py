@@ -12,7 +12,44 @@ argsubparsers.required = True
 
 # For the init subcommand
 argsp = argsubparsers.add_parser("init", help = "Initialize a new, empty repository")
-argsp.add_argument("path", metavar = "directory", nargs = "?", default = ".", help = "Where to create the repository")
+argsp.add_argument("path", metavar = "directory", nargs = "?", default = ".", help = "Where to create the repository.")
+
+def main(argv = sys.argv[1:]):
+    args = argparser.parse_args(argv)
+
+    match args.command:
+        #case "add":
+        #    cmd_add(args)
+        #case "cat-file": 
+        #    cmd_cat_file(args)
+        #case "check-ignore": 
+        #    cmd_check_ignore(args)
+        #case "checkout": 
+        #    cmd_checkout(args)
+        #case "commit": 
+        #    cmd_commit(args)
+        #case "hash-object":
+        #    cmd_hash_object(args)
+        case "init": 
+            cmd_init(args)
+        #case "log":
+        #    cmd_log(args)
+        #case "ls-files":
+        #    cmd_ls_files(args)
+        #case "ls-tree":
+        #    cmd_ls_tree(args)
+        #case "rev-parse":
+        #    cmd_rev_parse(args)
+        #case "rm":
+        #    cmd_rm(args)
+        #case "show-ref":
+        #    cmd_show_ref(args)
+        #case "status":
+        #    cmd_status(args)
+        #case "tag":
+        #    cmd_tag(args)
+        case _ :
+            print("Invalid command")
 
 class gitRepo (object):
     worktree = None
@@ -73,8 +110,8 @@ def repo_create(path):
     else:
         os.makedirs(repo.worktree)
     
-    assert repo_dir(repo, "branches", mkdir = False)
-    assert repo_dir(repo, "objects", mkdir = False)
+    assert repo_dir(repo, "branches", mkdir = True)
+    assert repo_dir(repo, "objects", mkdir = True)
     assert repo_dir(repo, "refs", "tags", mkdir = True)
     assert repo_dir(repo, "refs", "heads", mkdir = True)
 
@@ -101,31 +138,21 @@ def repo_default_config():
 
     return ret
 
+def repo_find(path = ".", required = True):
+    path = os.path.realpath(path)
+
+    if os.path.isdir(os.path.join(path, ".git")):
+        return gitRepo(path)
+    
+    parent = os.path.realpath(os.path.join(path, ".."))
+
+    if parent == path:
+        if required:
+            raise Exception("No git directory")
+        else:
+            return None
+    
+    return repo_find(parent, required)
+
 def cmd_init(args):
     repo_create(args.path)
-
-def main(argv = sys.argv[1:]):
-    args = argparser.parse_args(argv)
-    if args.command == "init":
-        cmd_init(args)
-    else:
-        print("Invalid Command")
-
-    """match args.command:
-        case "add" : cmd_add(args)
-        case "cat-file" : cmd_cat_file(args)
-        case "check-ignore" : cmd_check_ignore(args)
-        case "checkout" : cmd_checkout(args)
-        case "commit" : cmd_commit(args)
-        case "hash-object" : cmd_hash_object(args)
-        case "init" : cmd_init(args)
-        case "log" : cmd_log(args)
-        case "ls-files" : cmd_ls_files(args)
-        case "ls-tree" : cmd_ls_tree(args)
-        case "rev-parse" : cmd_rev_parse(args)
-        case "rm" : cmd_rm(args)
-        case "show-ref" : cmd_show_ref(args)
-        case "status" : cmd_status(args)
-        case "tag" : cmd_tag(args)
-        case _ : print("Invalid command")"""
-
