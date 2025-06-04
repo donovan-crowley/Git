@@ -25,6 +25,10 @@ argsp.add_argument("-t", metavar = "type", dest = "type", choices = ["blob", "co
 argsp.add_argument("-w", dest = "write", action = "store_true", help = "Actually write the object into the database")
 argsp.add_argument("path", help = "Read object from <file>")
 
+# Log subcommand
+argsp = argsubparsers.add_parser("log", help = "Display history of a given commit.")
+argsp.add_argument("commit", default = "HEAD", nargs = "?", help = "Commit to start at.")
+
 def main(argv = sys.argv[1:]):
     args = argparser.parse_args(argv)
 
@@ -43,8 +47,8 @@ def main(argv = sys.argv[1:]):
             cmd_hash_object(args)
         case "init": 
             cmd_init(args)
-        #case "log":
-        #    cmd_log(args)
+        case "log":
+            cmd_log(args)
         #case "ls-files":
         #    cmd_ls_files(args)
         #case "ls-tree":
@@ -277,6 +281,121 @@ def object_hash(fd, fmt, repo = None):
         case b'tag' : obj = GitTag(data)
         case b'blob' : obj = GitBlob(data)
     return object_write(obj, repo)
+
+def kvlm_parse(raw, start = 0, dct = None):
+    if not dct:
+        dct = dict()
+
+    # Search for next new space and new line
+    spc = raw.find(b' ', start)
+    nl = raw.find(b'\n', start)
+
+    # Base Case: There is no space or the new line appears before the space
+    if(spc < 0) or (nl < spc):
+        assert nl == start
+        dct[None] = raw[start + 1:]
+        return dct
+    
+    # Recursive Case: Read a key-value pair and recurse for the next
+    key = raw[start:spc]
+
+    # Find the end of the value
+    end = start
+    while True:
+        end = raw.find(b'\n', end + 1)
+        if raw[end + 1] != ord(' '):
+            break
+
+    # Grab the value
+    value = raw[spc + 1 : end].replace(b'\n', b'\n')
+
+    # Don't overwrite existing data contents
+    if key in dct:
+        if type(dct[key]) == list:
+            dct[key].append(value)
+        else:
+            dct[key] = [ dct[key], value ]
+    else:
+        dct[key] = value
+    return kvlm_parse(raw, start = end + 1, dct = dct)
+
+def kvlm_serialize(kvlm):
+    ret = b''
+
+    # Output fields
+    for k in kvlm.keys():
+        # Skip the message
+        if k == None:
+            continue
+
+        val = kvlm[k]
+        
+        # Normalize to a list
+        if type(val) != list:
+            val = [val]
+        
+        for v in val:
+            ret += k + b'' + (v.replace(b'\n', b'\n ')) + b'\n'
+    
+    # Append Message
+    ret += b'\n' + kvlm[None]
+    return ret
+
+class GitCommit(GitObject):
+    fmt = b'commit'
+
+    def deserialize(self, data):
+        self.kvlm = kvlm_parse(data)
+    
+    def serialize(self):
+        return kvlm_serialize(self.kvlm)
+    
+    def init(self):
+        self.kvlm = dict()
+
+def cmd_log(args):
+    # Log bridge function
+    repo = repo_find()
+
+    print("digraph wyaglog{")
+    print("  node[shape = rect]")
+    log_graphviz(repo, object_find(repo, args.commit), set())
+    print("}")
+
+def log_graphviz(repo, sha, seen):
+    if sha in seen:
+        return
+    seen.add(sha)
+
+    commit = object_read(repo, sha)
+    message = commit.kvlm[None].decode("utf8").strip()
+    message = message.replace("\\", "\\\\")
+    message = message.replace("\"", "\\\"")
+
+    # Keep only the first line
+    if "\n" in message:
+        message = message[:message.index("\n")]
+    
+    print(f"   c_{sha} [label = \" {sha[0:7]} : {message}\"]")
+    assert commit.fmt == b'commit'
+
+    # Base case: initial commit
+    if not b'parent' in commit.kvlm.keys():
+        return
+    
+    parents = commit.kvlm[b'parent']
+
+    if type(parents) != list:
+        parents = [parents]
+
+    for p in parents:
+        p = p.decode("ascii")
+        print(f"   c_{sha} -> c_{p};")
+        log_graphviz(repo, p, seen)
+    
+
+
+
 
 
 
