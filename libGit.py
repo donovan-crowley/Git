@@ -211,8 +211,8 @@ def object_read(repo, sha):
         # Pick constructor
         match fmt:
             case b'commit' : c = GitCommit
-            case b'tree' : c = GitTree
-            case b'tag' : c = GitTag
+            #case b'tree' : c = GitTree
+            #case b'tag' : c = GitTag
             case b'blob' : c = GitBlob
             case _: raise Exception(f"Unknown type {fmt.decode("ascii")} for object {sha}")
         # Call constructor and return object
@@ -277,8 +277,8 @@ def object_hash(fd, fmt, repo = None):
     # Choose constructor according to fmt argument
     match fmt:
         case b'commit' : obj = GitCommit(data)
-        case b'tree' : obj = GitTree(data)
-        case b'tag' : obj = GitTag(data)
+        #case b'tree' : obj = GitTree(data)
+        #case b'tag' : obj = GitTag(data)
         case b'blob' : obj = GitBlob(data)
     return object_write(obj, repo)
 
@@ -393,11 +393,69 @@ def log_graphviz(repo, sha, seen):
         print(f"   c_{sha} -> c_{p};")
         log_graphviz(repo, p, seen)
     
+class GitTreeLeaf (object):
+    def __init__(self, mode, path, sha):
+        self.mode = mode
+        self.path = path
+        self.sha = sha
 
+def tree_parse_one(raw, start = 0):
+    # Find the space terminator of the mode
+    x = raw.find(b' ', start)
+    assert x-start == 5 or x-start == 6
 
+    # Read the mode
+    mode = raw[start: x]
+    if len(mode) == 5:
+        mode = b'0' + mode
 
+    # Find the NULL terminator of the path
+    y = raw.find(b'\x00', x)
+    # Read the path
+    path = raw[x + 1: y]
 
+    # Read the SHA
+    raw_sha = int.from_bytes(raw[y + 1: y + 21], "big")
+    # Convert into hex string, padded to 40 char
+    sha = format(raw_sha, "040x")
+    return y + 21, GitTreeLeaf(mode, path.decode("utf8"), sha)
 
+def tree_parse(raw):
+    pos = 0
+    max = len(raw)
+    ret = list()
+    while pos < max:
+        pos, data = tree_parse_one(raw, pos)
+        ret.append(data)
+    return ret
 
+def tree_leaf_sort_key(leaf):
+    if leaf.mode.startswith(b"10"):
+        return leaf.path
+    else:
+        return leaf.path + "/"
 
-            
+def tree_serialize(obj):
+    obj.items.sort(key = tree_leaf_sort_key)
+    ret = b''
+    for i in obj.items:
+        ret += i.mode
+        ret += b' '
+        ret += i.path.encode("utf8")
+        ret += b'\x00'
+        sha = int(i.sha, 16)
+        ret += sha.to_bytes(20, byteorder = "big")
+    return ret
+
+class GitTree(GitObject):
+    fmt = b'tree'
+
+    def deserialize(self, data):
+        self.items = tree_parse(data)
+
+    def serialize(self):
+        return tree_serialize(self)
+    
+    def init(self):
+        self.items = list()
+    
