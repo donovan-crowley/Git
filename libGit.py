@@ -11,23 +11,33 @@ argsubparsers = argparser.add_subparsers(title = "Commands", dest = "command")
 argsubparsers.required = True
 
 # Init subcommand
-argsp = argsubparsers.add_parser("init", help = "Initialize a new, empty repository")
+argsp = argsubparsers.add_parser("init", help = "Initialize a new, empty repository.")
 argsp.add_argument("path", metavar = "directory", nargs = "?", default = ".", help = "Where to create the repository.")
 
 # Cat-file subcommand
-argsp = argsubparsers.add_parser("cat-file", help = "Provide content of repository object")
-argsp.add_argument("type", metavar = "type", choices = ["blob", "commit", "tag", "tree"], help = "Specify the tree")
-argsp.add_argument("object", metavar = "type", help = "The object to display")
+argsp = argsubparsers.add_parser("cat-file", help = "Provide content of repository object.")
+argsp.add_argument("type", metavar = "type", choices = ["blob", "commit", "tag", "tree"], help = "Specify the tree.")
+argsp.add_argument("object", metavar = "type", help = "The object to display.")
 
 # Hash-object subcommand
-argsp = argsubparsers.add_parser("hash-object", help = "Compute object ID and optionally create a blob from a file")
-argsp.add_argument("-t", metavar = "type", dest = "type", choices = ["blob", "commit", "tag", "tree"], default = "blob", help = "Specify the type")
-argsp.add_argument("-w", dest = "write", action = "store_true", help = "Actually write the object into the database")
-argsp.add_argument("path", help = "Read object from <file>")
+argsp = argsubparsers.add_parser("hash-object", help = "Compute object ID and optionally create a blob from a file.")
+argsp.add_argument("-t", metavar = "type", dest = "type", choices = ["blob", "commit", "tag", "tree"], default = "blob", help = "Specify the type.")
+argsp.add_argument("-w", dest = "write", action = "store_true", help = "Actually write the object into the database.")
+argsp.add_argument("path", help = "Read object from <file>.")
 
 # Log subcommand
 argsp = argsubparsers.add_parser("log", help = "Display history of a given commit.")
 argsp.add_argument("commit", default = "HEAD", nargs = "?", help = "Commit to start at.")
+
+# Ls-tree subcommand
+argsp = argsubparsers.add_parser("ls-tree", help = "Pretty-print a tree object.")
+argsp.add_argument("-r", dest = "recursive", action = "store_true", help = "Recurse into sub-trees.")
+argsp.add_argument("tree", help = "A tree-ish object.")
+
+# Checkout subcommand
+argsp = argsubparsers.add_parser("checkout", help = "Checkout a commit inside of a directory.")
+argsp.add_argument("commit", help = "The commit or tree to checkout.")
+argsp.add_argument("path", help = "The EMPTY directory to checkout on.")
 
 def main(argv = sys.argv[1:]):
     args = argparser.parse_args(argv)
@@ -458,4 +468,58 @@ class GitTree(GitObject):
     
     def init(self):
         self.items = list()
+
+def cmd_ls_tree(args):
+    repo = repo_find()
+    ls_tree(repo, args.tree, args.recursive)
+
+def ls_tree(repo, ref, recursive = "None", prefix = ""):
+    sha = object_find(repo, ref, fmt = b"tree")
+    obj = object_read(repo, sha)
+    for item in obj.items:
+        if len(item.mode) == 5:
+            type = item.mode[0:1]
+        else:
+            type = item.mode[0:2]
+
+        match type:
+            case b'04' : type = "tree"
+            case b'10' : type = "blob"
+            case b'12' : type = "blob"
+            case b'16' : type = "commit"
+            case _: raise Exception(f"Weird tree leaf mode {item.mode}")
+        
+        if not(recursive and type == 'tree'): # Leaf
+            print(f"{'0' * (6 - len(item.mode)) + item.mode.decode("ascii")} {type} {item.sha}\t{os.path.join(prefix, item.path)}")
+        else: # Branch, recursive
+            ls_tree(repo, item.sha, recursive, os.path.join(prefix, item.path))
+
+def cmd_checkout(args):
+    # Checkout bridge function
+    repo = repo_find()
+    obj = object_read(repo, object_find(repo, args.commit))
+
+    if obj.fmt == b'commit':
+        obj = object_read(repo, obj.kvlm[b'tree'].decode("ascii"))
     
+    if os.path.exists(args.path):
+        if not os.path.isdir(args.path):
+            raise Exception(f"Not a directory {args.path}!")
+        if os.listdir(args.path):
+            raise Exception(f"Not empty {args.path}!")
+    else:
+        os.makedirs(args.path)
+    tree_checkout(repo, obj, os.path.realpath(args.path))
+
+def tree_checkout(repo, tree, path):
+    for item in tree.items:
+        obj = object_read(repo, item.sha)
+        dest = os.path.join(path, item.path)
+
+        if obj.fmt == b'tree':
+            os.mkdir(dest)
+            tree_checkout(repo, obj, dest)
+        elif obj.fmt == b'blob':
+            with open(dest, 'wb') as f:
+                f.write(obj.blobdata)
+
