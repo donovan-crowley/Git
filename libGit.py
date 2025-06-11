@@ -548,7 +548,7 @@ def ref_list(repo, path = None):
     for f in sorted(os.listdir(path)):
         can = os.path.join(path, f)
         if os.path.isdir(can):
-            ret[f] = ret_list(repo, can)
+            ret[f] = ref_list(repo, can)
         else:
             ret[f] = ref_resolve(repo, can)
         
