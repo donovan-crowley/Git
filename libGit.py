@@ -39,6 +39,10 @@ argsp = argsubparsers.add_parser("checkout", help = "Checkout a commit inside of
 argsp.add_argument("commit", help = "The commit or tree to checkout.")
 argsp.add_argument("path", help = "The EMPTY directory to checkout on.")
 
+# Show-ref subcommand
+argsp = argsubparsers.add_parser("show-ref", help = "List references.")
+
+
 def main(argv = sys.argv[1:]):
     args = argparser.parse_args(argv)
 
@@ -141,14 +145,14 @@ def repo_create(path):
     assert repo_dir(repo, "refs", "heads", mkdir = True)
 
     # .git/description
-    with open(repo_file(repo, "description"), "w") as f:
-        f.write("Unnamed repository: edit this file 'description' to name the repository.\n")
+    with open(repo_file(repo, "description"), "w") as file:
+        file.write("Unnamed repository: edit this file 'description' to name the repository.\n")
 
     # .git/HEAD
-    with open(repo_file(repo, "HEAD"), "w") as f:
-        f.write("ref: refs/heads/master\n")
+    with open(repo_file(repo, "HEAD"), "w") as file:
+        file.write("ref: refs/heads/master\n")
     
-    with open(repo_file(repo, "config"), "w") as f:
+    with open(repo_file(repo, "config"), "w") as file:
         config = repo_default_config()
         config.write()
     return repo
@@ -205,8 +209,8 @@ def object_read(repo, sha):
     if not os.path.isfile(open):
         return None
     
-    with open (path, "rb") as f:
-        raw = zlib.decompress(f.read())
+    with open (path, "rb") as file:
+        raw = zlib.decompress(file.read())
 
         # Raw object type
         x = raw.find(b' ')
@@ -242,8 +246,8 @@ def object_write(obj, repo = None):
         path = repo_file(repo, "objects", sha[0:2], sha[2:], mkdir = True)
         
         if not os.path.exists(path):
-            with open(path, 'wb') as f:
-                f.write(zlib.compress(result))
+            with open(path, 'wb') as file:
+                file.write(zlib.compress(result))
     return sha
 
 class GitBlob(GitObject):
@@ -276,8 +280,8 @@ def cmd_hash_object(args):
     else:
         repo = None
     
-    with open(args.path, "rb") as fd:
-        sha = object_hash(fd, args.type.encode(), repo)
+    with open(args.path, "rb") as file:
+        sha = object_hash(file, args.type.encode(), repo)
         print(sha)
 
 def object_hash(fd, fmt, repo = None):
@@ -520,6 +524,48 @@ def tree_checkout(repo, tree, path):
             os.mkdir(dest)
             tree_checkout(repo, obj, dest)
         elif obj.fmt == b'blob':
-            with open(dest, 'wb') as f:
-                f.write(obj.blobdata)
+            with open(dest, 'wb') as file:
+                file.write(obj.blobdata)
 
+def ref_resolve(repo, ref):
+    path = repo_file(repo, ref)
+    if not os.path.ispath(path):
+        return None
+    
+    with open(path, 'r') as file:
+        data = file.read()[:-1]
+    
+    if data.startswith("ref: "):
+        return ref_resolve(repo, data[5:])
+    else:
+        return data
+
+def ref_list(repo, path = None):
+    if not path:
+        path = repo_dir(repo, "refs")
+    
+    ret = dict()
+    for f in sorted(os.listdir(path)):
+        can = os.path.join(path, f)
+        if os.path.isdir(can):
+            ret[f] = ret_list(repo, can)
+        else:
+            ret[f] = ref_resolve(repo, can)
+        
+        return ret
+
+def cmd_show_ref(args):
+    repo = repo_find()
+    refs = ref_list(repo)
+    show_ref(repo, refs, prefix = "refs")
+
+def show_ref(repo, refs, with_hash = True, prefix = ""):
+    if prefix:
+        prefix = prefix + '/'
+    for k, v in refs.items():
+        if type(v) == str and with_hash:
+            print(f"{v} {prefix}{k}")
+        elif type(v) == str:
+            print(f"{prefix}{k}")
+        else:
+            show_ref(repo, v, with_hash = with_hash, prefix = f"{prefix}{k}")
