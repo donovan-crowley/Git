@@ -53,6 +53,10 @@ argsp = argsubparsers.add_parser("rev-parse", help = "Parse revision (or other o
 argsp.add_argument("--wyag-type", metavar = "type", dest = "type", choices = ["blob", "commit", "tag", "tree"], default = None, help = "Specify the expected type.")
 argsp.add_argument("name", help = "The name to parse.")
 
+# Ls-files subcommand
+argsp = argsubparsers.add_parser("ls-files", help = "List all the stage files")
+argsp.add_argument("--verbose", action = "store_true", help = "Show everything.")
+
 def main(argv = sys.argv[1:]):
     args = argparser.parse_args(argv)
 
@@ -765,4 +769,23 @@ def index_read(repo):
 
         entries.append(GitIndexEntry(ctime = (ctime_s, ctime_ns), mtime = (mtime_s, mtime_ns), dev = dev, ino = ino, mode_type = mode_type, mode_perms = mode_perms, uid = uid, gid = gid, fsize = fsize, sha = sha, flag_assume_valid = flag_assume_valid, flag_stage = flag_stage, name = name))
         return GitIndex(version = version, entries = entries)
+
+def cmd_ls_files(args):
+    repo = repo_find()
+    index = index_read(repo)
+    if args.verbose:
+        print(f"Index file format v{index.version}, containing {len(index.entries)} entries.")
     
+    for e in index.entries:
+        print(e.name)
+        if args.verbose:
+            entry_type = { 0b1000: "regular file",
+                           0b1010: "symlink",
+                           0b1110: "git link"} [e.mode_type]
+            print(f"    {entry_type} with perms: {e.mode_perms:o}")
+            print(f"    on blob: {e.sha}")
+            print(f"    created: {datetime.fromtimestamp(e.ctime[0])}.{e.ctime[1]}, modified: {datetime.fromtimestamp(e.mtime[0])}.{e.mtime[1]}")
+            print(f"    device: {e.dev}, inode: {e.ino}")
+            print(f"    user: {pwd.getpwuid(e.uid).pw_name} ({e.uid})   group: {grp.getgrgid(e.gid).gr_name} ({e.gid})")
+            print(f"    flags: stage={e.flag_stage} assume_valid={e.flag_assume_valid}")
+ 
