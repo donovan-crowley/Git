@@ -64,6 +64,10 @@ argsp.add_argument("path", nargs = "+", help = "Paths to check")
 # Status subcommand
 argsp = argsubparsers.add_parser("status", help = "Show the working tree status.")
 
+# Rm subcommand
+argsp = argsubparsers.add_parser("rm", help = "Remove files from the working tree and the index.")
+argsp.add_argument("path", nargs = "+", help = "Files to remove")
+
 def main(argv = sys.argv[1:]):
     args = argparser.parse_args(argv)
 
@@ -1024,3 +1028,35 @@ def index_write(repo, index):
                 file.write((0).to_bytes(pad, "big"))
                 idx += pad
 
+def cmd_rm(args):
+    repo = repo_find()
+    rm(rpeo, args.path)
+
+def rm(repo, paths, delete = True, skip_missing = False):
+    index = index_read(repo)
+    worktree = repo.worktree + os.sep
+    abspaths = set()
+    for path in paths:
+        abspath = os.path.abspath(path)
+        if abspath.startswith(worktree):
+            abspaths.add(abspath)
+        else:
+            raise Exception(f"Cannot remove paths outside of worktree: {paths}")
+    kept_entries = list()
+    remove = list()
+
+    for e in index.entries:
+        full_path = os.path.join(repo.worktree, e.name)
+        if full_path in abspaths:
+            remove.append(full_path)
+            abspaths.remove(full_path)
+        else:
+            kept_entries.append(e)
+    if len(abspaths) > 0 and not skip_missing:
+        raise Exception(f"Cannot remove paths not in the index: {abspaths}")
+    
+    if delete:
+        for path in remove:
+            os.unlink(path)
+    index.entries = kept_entries
+    index_write(repo, index)
